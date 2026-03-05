@@ -155,3 +155,130 @@ def validar_posicao(posicao: str):
 def validar_gols(gols_mandante: int, gols_visitante: int):
     if gols_mandante < 0 or gols_visitante < 0:
         raise ValueError("Os gols não podem ser negativos.")
+
+# =============================================================================
+# CRUD - TIMES
+# =============================================================================
+
+class CRUDTimes:
+    
+
+    def criar(self, nome: str, estado: str, ano_fundacao: int) -> int:
+        """
+        Cadastra um novo time no banco.
+        Retorna o ID do time criado.
+        """
+        estado = normalizar_estado(estado)
+        validar_estado(estado)
+        validar_ano_fundacao(ano_fundacao)
+
+        with conectar() as conn:
+            cursor = conn.execute(
+                "INSERT INTO Times (nome, estado, ano_fundacao) VALUES (?, ?, ?)",
+                (nome.strip(), estado, ano_fundacao)
+            )
+            print(f"[Times] Time '{nome}' cadastrado com ID {cursor.lastrowid}.")
+            return cursor.lastrowid
+
+    def buscar_por_id(self, id_time: int) -> dict | None:
+        """
+        Busca um time pelo ID.
+        Retorna um dicionário com os dados ou None se não encontrado.
+        """
+        with conectar() as conn:
+            row = conn.execute(
+                "SELECT * FROM Times WHERE id_time = ?", (id_time,)
+            ).fetchone()
+
+        if row:
+            return dict(row)
+
+        print(f"[Times] Nenhum time encontrado com ID {id_time}.")
+        return None
+
+    def listar(self, estado: str = None) -> list[dict]:
+        """
+        Lista todos os times cadastrados.
+        Se informado, filtra pelo estado.
+        """
+        with conectar() as conn:
+            if estado:
+                rows = conn.execute(
+                    "SELECT * FROM Times WHERE estado = ? ORDER BY nome",
+                    (normalizar_estado(estado),)
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM Times ORDER BY nome"
+                ).fetchall()
+
+        return [dict(r) for r in rows]
+
+    def atualizar(self, id_time: int, nome: str = None,
+                  estado: str = None, ano_fundacao: int = None) -> bool:
+        """
+        Atualiza os dados de um time.
+        Só altera os campos que forem informados.
+        Retorna True se o time foi encontrado e atualizado.
+        """
+        campos, valores = [], []
+
+        if nome is not None:
+            campos.append("nome = ?")
+            valores.append(nome.strip())
+
+        if estado is not None:
+            estado = normalizar_estado(estado)
+            validar_estado(estado)
+            campos.append("estado = ?")
+            valores.append(estado)
+
+        if ano_fundacao is not None:
+            validar_ano_fundacao(ano_fundacao)
+            campos.append("ano_fundacao = ?")
+            valores.append(ano_fundacao)
+
+        if not campos:
+            print("[Times] Nenhum campo informado para atualizar.")
+            return False
+
+        valores.append(id_time)
+        sql = f"UPDATE Times SET {', '.join(campos)} WHERE id_time = ?"
+
+        with conectar() as conn:
+            cursor = conn.execute(sql, valores)
+            atualizado = cursor.rowcount > 0
+
+        if atualizado:
+            print(f"[Times] Time ID {id_time} atualizado.")
+        else:
+            print(f"[Times] Nenhum time encontrado com ID {id_time}.")
+
+        return atualizado
+
+    def deletar(self, id_time: int) -> bool:
+        """
+        Remove um time do banco.
+        Não é possível remover um time que tenha jogadores ou partidas cadastradas.
+        Retorna True se o time foi removido.
+        """
+        try:
+            with conectar() as conn:
+                cursor = conn.execute(
+                    "DELETE FROM Times WHERE id_time = ?", (id_time,)
+                )
+                deletado = cursor.rowcount > 0
+
+            if deletado:
+                print(f"[Times] Time ID {id_time} removido.")
+            else:
+                print(f"[Times] Nenhum time encontrado com ID {id_time}.")
+
+            return deletado
+
+        except sqlite3.IntegrityError:
+            print(
+                f"[Times] Não foi possível remover o time ID {id_time}. "
+                "Existem jogadores ou partidas vinculados a ele."
+            )
+            return False
