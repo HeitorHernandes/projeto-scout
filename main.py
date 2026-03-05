@@ -100,3 +100,58 @@ def inicializar_banco():
     with conectar() as conn:
         conn.executescript(schema)
     print("Banco inicializado com sucesso.")
+    
+
+
+# =============================================================================
+# FUNÇÕES DE NORMALIZAÇÃO
+# =============================================================================
+
+def normalizar_estado(estado: str) -> str:
+    return estado.strip().upper()
+
+
+def normalizar_posicao(posicao: str) -> str:
+      return posicao.strip().title()
+
+
+def normalizar_data(data: str) -> str:
+    # Converte a data do formato DD/MM/AAAA para YYYY-MM-DD (padrão do banco).
+    try:
+        return datetime.strptime(data.strip(), "%d/%m/%Y").strftime("%Y-%m-%d")
+    except ValueError:
+        raise ValueError(
+            f"Data inválida: '{data}'. Use o formato DD/MM/AAAA, ex: 17/08/1996."
+        )
+    
+
+
+# =============================================================================
+# FUNÇÕES DE VALIDAÇÃO
+# =============================================================================
+
+def validar_estado(estado: str):
+    if len(estado) != 2 or not estado.isalpha():
+        raise ValueError(
+            f"Estado inválido: '{estado}'. Informe a sigla do estado com 2 letras, ex: 'SP'."
+        )
+
+
+def validar_ano_fundacao(ano: int):
+    ano_atual = datetime.now().year
+    if not (1863 <= ano <= ano_atual):
+        raise ValueError(
+            f"Ano de fundação inválido: {ano}. Coloque um ano válido entre 1863 e {ano_atual}."
+        )
+
+
+def validar_posicao(posicao: str):
+    if posicao not in POSICOES_VALIDAS:
+        raise ValueError(
+            f"Posição inválida: '{posicao}'. Posições aceitas: {POSICOES_VALIDAS}"
+        )
+
+
+def validar_gols(gols_mandante: int, gols_visitante: int):
+    if gols_mandante < 0 or gols_visitante < 0:
+        raise ValueError("Os gols não podem ser negativos.")
