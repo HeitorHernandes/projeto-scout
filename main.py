@@ -820,3 +820,11 @@ class CRUDScout:
 
         return deletado
 
+# =============================================================================
+# INSTÂNCIAS PRONTAS PARA USO
+# =============================================================================
+
+times     = CRUDTimes()
+jogadores = CRUDJogadores()
+partidas  = CRUDPartidas()
+scout     = CRUDScout()
