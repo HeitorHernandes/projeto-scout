@@ -282,3 +282,313 @@ class CRUDTimes:
                 "Existem jogadores ou partidas vinculados a ele."
             )
             return False
+        
+# =============================================================================
+# CRUD - JOGADORES
+# =============================================================================
+
+class CRUDJogadores:
+    """Operações CRUD para a tabela Jogadores."""
+
+    def criar(self, nome: str, posicao: str,
+              data_nascimento: str, id_time: int) -> int:
+        """
+        Cadastra um novo jogador no banco.
+        Retorna o ID do jogador criado.
+        """
+        posicao         = normalizar_posicao(posicao)
+        data_nascimento = normalizar_data(data_nascimento)
+        validar_posicao(posicao)
+
+        with conectar() as conn:
+            cursor = conn.execute(
+                """INSERT INTO Jogadores (nome, posicao, data_nascimento, id_time)
+                   VALUES (?, ?, ?, ?)""",
+                (nome.strip(), posicao, data_nascimento, id_time)
+            )
+            print(f"[Jogadores] '{nome}' cadastrado com ID {cursor.lastrowid}.")
+            return cursor.lastrowid
+
+    def buscar_por_id(self, id_jogador: int) -> dict | None:
+        """
+        Busca um jogador pelo ID, incluindo o nome do time.
+        Retorna um dicionário com os dados ou None se não encontrado.
+        """
+        with conectar() as conn:
+            row = conn.execute(
+                """SELECT j.*, t.nome AS nome_time
+                   FROM Jogadores j
+                   JOIN Times t ON t.id_time = j.id_time
+                   WHERE j.id_jogador = ?""",
+                (id_jogador,)
+            ).fetchone()
+
+        if row:
+            return dict(row)
+
+        print(f"[Jogadores] Nenhum jogador encontrado com ID {id_jogador}.")
+        return None
+
+    def listar(self, id_time: int = None, posicao: str = None) -> list[dict]:
+        """
+        Lista jogadores com filtros opcionais por time e/ou posição.
+        Inclui o nome do time no resultado.
+        """
+        query = """SELECT j.*, t.nome AS nome_time
+                   FROM Jogadores j
+                   JOIN Times t ON t.id_time = j.id_time"""
+
+        filtros, valores = [], []
+
+        if id_time is not None:
+            filtros.append("j.id_time = ?")
+            valores.append(id_time)
+
+        if posicao is not None:
+            filtros.append("j.posicao = ?")
+            valores.append(normalizar_posicao(posicao))
+
+        if filtros:
+            query += " WHERE " + " AND ".join(filtros)
+
+        query += " ORDER BY j.nome"
+
+        with conectar() as conn:
+            rows = conn.execute(query, valores).fetchall()
+
+        return [dict(r) for r in rows]
+
+    def atualizar(self, id_jogador: int, nome: str = None, posicao: str = None,
+                  data_nascimento: str = None, id_time: int = None) -> bool:
+        """
+        Atualiza os dados de um jogador.
+        Só altera os campos que forem informados.
+        Retorna True se o jogador foi encontrado e atualizado.
+        """
+        campos, valores = [], []
+
+        if nome is not None:
+            campos.append("nome = ?")
+            valores.append(nome.strip())
+
+        if posicao is not None:
+            posicao = normalizar_posicao(posicao)
+            validar_posicao(posicao)
+            campos.append("posicao = ?")
+            valores.append(posicao)
+
+        if data_nascimento is not None:
+            campos.append("data_nascimento = ?")
+            valores.append(normalizar_data(data_nascimento))
+
+        if id_time is not None:
+            campos.append("id_time = ?")
+            valores.append(id_time)
+
+        if not campos:
+            print("[Jogadores] Nenhum campo informado para atualizar.")
+            return False
+
+        valores.append(id_jogador)
+        sql = f"UPDATE Jogadores SET {', '.join(campos)} WHERE id_jogador = ?"
+
+        with conectar() as conn:
+            cursor = conn.execute(sql, valores)
+            atualizado = cursor.rowcount > 0
+
+        if atualizado:
+            print(f"[Jogadores] Jogador ID {id_jogador} atualizado.")
+        else:
+            print(f"[Jogadores] Nenhum jogador encontrado com ID {id_jogador}.")
+
+        return atualizado
+
+    def deletar(self, id_jogador: int) -> bool:
+        """
+        Remove um jogador do banco.
+        Não é possível remover um jogador com scouts registrados.
+        Retorna True se o jogador foi removido.
+        """
+        try:
+            with conectar() as conn:
+                cursor = conn.execute(
+                    "DELETE FROM Jogadores WHERE id_jogador = ?", (id_jogador,)
+                )
+                deletado = cursor.rowcount > 0
+
+            if deletado:
+                print(f"[Jogadores] Jogador ID {id_jogador} removido.")
+            else:
+                print(f"[Jogadores] Nenhum jogador encontrado com ID {id_jogador}.")
+
+            return deletado
+
+        except sqlite3.IntegrityError:
+            print(
+                f"[Jogadores] Não foi possível remover o jogador ID {id_jogador}. "
+                "Existem scouts vinculados a ele."
+            )
+            return False
+
+# =============================================================================
+# CRUD - PARTIDAS
+# =============================================================================
+
+class CRUDPartidas:
+    """Operações CRUD para a tabela Partidas."""
+
+    def criar(self, id_time_mandante: int, id_time_visitante: int,
+              data_partida: str, campeonato: str,
+              gols_mandante: int = 0, gols_visitante: int = 0) -> int:
+        """
+        Registra uma nova partida.
+        Retorna o ID da partida criada.
+        """
+        if id_time_mandante == id_time_visitante:
+            raise ValueError("O time mandante e o visitante não podem ser o mesmo.")
+
+        validar_gols(gols_mandante, gols_visitante)
+        data_partida = normalizar_data(data_partida)
+
+        with conectar() as conn:
+            cursor = conn.execute(
+                """INSERT INTO Partidas
+                       (id_time_mandante, id_time_visitante, data_partida,
+                        campeonato, gols_mandante, gols_visitante)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (id_time_mandante, id_time_visitante, data_partida,
+                 campeonato.strip(), gols_mandante, gols_visitante)
+            )
+            print(f"[Partidas] Partida registrada com ID {cursor.lastrowid}.")
+            return cursor.lastrowid
+
+    def buscar_por_id(self, id_partida: int) -> dict | None:
+        """
+        Busca uma partida pelo ID, incluindo os nomes dos times.
+        Retorna um dicionário com os dados ou None se não encontrada.
+        """
+        with conectar() as conn:
+            row = conn.execute(
+                """SELECT p.*,
+                          tm.nome AS nome_mandante,
+                          tv.nome AS nome_visitante
+                   FROM Partidas p
+                   JOIN Times tm ON tm.id_time = p.id_time_mandante
+                   JOIN Times tv ON tv.id_time = p.id_time_visitante
+                   WHERE p.id_partida = ?""",
+                (id_partida,)
+            ).fetchone()
+
+        if row:
+            return dict(row)
+
+        print(f"[Partidas] Nenhuma partida encontrada com ID {id_partida}.")
+        return None
+
+    def listar(self, campeonato: str = None, id_time: int = None) -> list[dict]:
+        """
+        Lista partidas com filtros opcionais.
+        Se id_time for informado, retorna partidas em que o time participou
+        como mandante ou visitante.
+        """
+        query = """SELECT p.*,
+                          tm.nome AS nome_mandante,
+                          tv.nome AS nome_visitante
+                   FROM Partidas p
+                   JOIN Times tm ON tm.id_time = p.id_time_mandante
+                   JOIN Times tv ON tv.id_time = p.id_time_visitante"""
+
+        filtros, valores = [], []
+
+        if campeonato is not None:
+            filtros.append("p.campeonato = ?")
+            valores.append(campeonato.strip())
+
+        if id_time is not None:
+            filtros.append("(p.id_time_mandante = ? OR p.id_time_visitante = ?)")
+            valores.extend([id_time, id_time])
+
+        if filtros:
+            query += " WHERE " + " AND ".join(filtros)
+
+        query += " ORDER BY p.data_partida DESC"
+
+        with conectar() as conn:
+            rows = conn.execute(query, valores).fetchall()
+
+        return [dict(r) for r in rows]
+
+    def atualizar(self, id_partida: int, gols_mandante: int = None,
+                  gols_visitante: int = None, campeonato: str = None,
+                  data_partida: str = None) -> bool:
+        """
+        Atualiza os dados de uma partida.
+        Só altera os campos que forem informados.
+        Retorna True se a partida foi encontrada e atualizada.
+        """
+        campos, valores = [], []
+
+        if gols_mandante is not None:
+            if gols_mandante < 0:
+                raise ValueError("Os gols do mandante não podem ser negativos.")
+            campos.append("gols_mandante = ?")
+            valores.append(gols_mandante)
+
+        if gols_visitante is not None:
+            if gols_visitante < 0:
+                raise ValueError("Os gols do visitante não podem ser negativos.")
+            campos.append("gols_visitante = ?")
+            valores.append(gols_visitante)
+
+        if campeonato is not None:
+            campos.append("campeonato = ?")
+            valores.append(campeonato.strip())
+
+        if data_partida is not None:
+            campos.append("data_partida = ?")
+            valores.append(normalizar_data(data_partida))
+
+        if not campos:
+            print("[Partidas] Nenhum campo informado para atualizar.")
+            return False
+
+        valores.append(id_partida)
+        sql = f"UPDATE Partidas SET {', '.join(campos)} WHERE id_partida = ?"
+
+        with conectar() as conn:
+            cursor = conn.execute(sql, valores)
+            atualizado = cursor.rowcount > 0
+
+        if atualizado:
+            print(f"[Partidas] Partida ID {id_partida} atualizada.")
+        else:
+            print(f"[Partidas] Nenhuma partida encontrada com ID {id_partida}.")
+
+        return atualizado
+
+    def deletar(self, id_partida: int) -> bool:
+        """
+        Remove uma partida do banco.
+        Não é possível remover uma partida que tenha scouts registrados.
+        Retorna True se a partida foi removida.
+        """
+        try:
+            with conectar() as conn:
+                cursor = conn.execute(
+                    "DELETE FROM Partidas WHERE id_partida = ?", (id_partida,)
+                )
+                deletado = cursor.rowcount > 0
+
+            if deletado:
+                print(f"[Partidas] Partida ID {id_partida} removida.")
+            else:
+                print(f"[Partidas] Nenhuma partida encontrada com ID {id_partida}.")
+
+            return deletado
+
+        except sqlite3.IntegrityError:
+            print(
+                f"[Partidas] Não foi possível remover a partida ID {id_partida}. "
+                "Existem scouts vinculados a ela."
+            )
+            return False
