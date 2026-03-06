@@ -8,7 +8,7 @@ Tabelas:
     - Scout_Desempenho
 
 Autor: Heitor Hernandes
-Data:  2026-03-05
+Data:  2026-03-06
 """
 
 import sqlite3
@@ -592,3 +592,231 @@ class CRUDPartidas:
                 "Existem scouts vinculados a ela."
             )
             return False
+
+# =============================================================================
+# CRUD - SCOUT_DESEMPENHO
+# =============================================================================
+
+class CRUDScout:
+    """Operações CRUD para a tabela Scout_Desempenho."""
+
+    def criar(self, id_partida: int, id_jogador: int, titular: int = 1,
+              minutos_jogados: int = 0, gols: int = 0, assistencias: int = 0,
+              passes_tentados: int = 0, passes_certos: int = 0,
+              desarmes: int = 0, faltas_cometidas: int = 0,
+              cartao_amarelo: int = 0, cartao_vermelho: int = 0) -> int|None:
+        """
+        Registra o desempenho de um jogador em uma partida.
+        Retorna o ID do scout criado.
+        """
+        # Validações antes de salvar
+        if titular not in (0, 1):
+            raise ValueError("O campo titular deve ser 0 (reserva) ou 1 (titular).")
+        if cartao_amarelo not in (0, 1, 2):
+            raise ValueError("cartao_amarelo deve ser 0, 1 ou 2.")
+        if cartao_vermelho not in (0, 1):
+            raise ValueError("cartao_vermelho deve ser 0 ou 1.")
+        if minutos_jogados < 0 or minutos_jogados > 150:
+            raise ValueError("minutos_jogados deve ser entre 0 e 150.")
+        if passes_certos > passes_tentados:
+            raise ValueError("passes_certos não pode ser maior que passes_tentados.")
+        
+         # Verifica se os demais valores não são negativos
+        campos_numericos = {
+            "gols": gols, "assistencias": assistencias,
+            "passes_tentados": passes_tentados, "passes_certos": passes_certos,
+            "desarmes": desarmes, "faltas_cometidas": faltas_cometidas
+        }
+        for campo, valor in campos_numericos.items():
+            if valor < 0:
+                raise ValueError(f"O campo '{campo}' não pode ser negativo.")
+        try:
+            with conectar() as conn:   
+                cursor = conn.execute(
+                    """INSERT INTO Scout_Desempenho
+                       (id_partida, id_jogador, titular, minutos_jogados, gols,
+                        assistencias, passes_tentados, passes_certos, desarmes,
+                        faltas_cometidas, cartao_amarelo, cartao_vermelho)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (id_partida, id_jogador, titular, minutos_jogados, gols,
+                 assistencias, passes_tentados, passes_certos, desarmes,
+                 faltas_cometidas, cartao_amarelo, cartao_vermelho)
+                    ) 
+                print(f"[Scout] Desempenho registrado com ID {cursor.lastrowid}.")
+                return cursor.lastrowid
+        except sqlite3.IntegrityError:
+            print(f"[Scout] Já existe um scout para o jogador ID {id_jogador} na partida ID {id_partida}.")
+            return None
+
+    def buscar_por_id(self, id_scout: int) -> dict | None:
+        """
+        Busca um scout pelo ID, incluindo nome do jogador e times da partida.
+        Retorna um dicionário com os dados ou None se não encontrado.
+        """
+        with conectar() as conn:
+            row = conn.execute(
+                """SELECT s.*,
+                          j.nome  AS nome_jogador,
+                          tm.nome AS nome_mandante,
+                          tv.nome AS nome_visitante,
+                          p.data_partida,
+                          p.campeonato
+                   FROM Scout_Desempenho s
+                   JOIN Jogadores j  ON j.id_jogador = s.id_jogador
+                   JOIN Partidas  p  ON p.id_partida = s.id_partida
+                   JOIN Times     tm ON tm.id_time   = p.id_time_mandante
+                   JOIN Times     tv ON tv.id_time   = p.id_time_visitante
+                   WHERE s.id_scout = ?""",
+                (id_scout,)
+            ).fetchone()
+
+        if row:
+            return dict(row)
+
+        print(f"[Scout] Nenhum scout encontrado com ID {id_scout}.")
+        return None
+
+    def listar(self, id_partida: int = None, id_jogador: int = None) -> list[dict]:
+        """
+        Lista scouts com filtros opcionais por partida e/ou jogador.
+        Inclui nome do jogador e dos times no resultado.
+        """
+        query = """SELECT s.*,
+                          j.nome  AS nome_jogador,
+                          tm.nome AS nome_mandante,
+                          tv.nome AS nome_visitante
+                   FROM Scout_Desempenho s
+                   JOIN Jogadores j  ON j.id_jogador = s.id_jogador
+                   JOIN Partidas  p  ON p.id_partida = s.id_partida
+                   JOIN Times     tm ON tm.id_time   = p.id_time_mandante
+                   JOIN Times     tv ON tv.id_time   = p.id_time_visitante"""
+
+        filtros, valores = [], []
+
+        if id_partida is not None:
+            filtros.append("s.id_partida = ?")
+            valores.append(id_partida)
+
+        if id_jogador is not None:
+            filtros.append("s.id_jogador = ?")
+            valores.append(id_jogador)
+
+        if filtros:
+            query += " WHERE " + " AND ".join(filtros)
+
+        with conectar() as conn:
+            rows = conn.execute(query, valores).fetchall()
+
+        return [dict(r) for r in rows]
+
+    def atualizar(self, id_scout: int, gols: int = None, assistencias: int = None,
+                  passes_tentados: int = None, passes_certos: int = None,
+                  desarmes: int = None, faltas_cometidas: int = None,
+                  minutos_jogados: int = None, cartao_amarelo: int = None,
+                  cartao_vermelho: int = None, titular: int = None) -> bool:
+        """
+        Atualiza os dados de um scout.
+        Só altera os campos que forem informados.
+        Retorna True se o scout foi encontrado e atualizado.
+        """
+        campos, valores = [], []
+
+        if gols is not None:
+            campos.append("gols = ?")
+            valores.append(gols)
+
+        if assistencias is not None:
+            campos.append("assistencias = ?")
+            valores.append(assistencias)
+
+        if minutos_jogados is not None:
+            if not (0 <= minutos_jogados <= 150):
+                raise ValueError("minutos_jogados deve ser entre 0 e 150.")
+            campos.append("minutos_jogados = ?")
+            valores.append(minutos_jogados)
+
+        if passes_tentados is not None:
+            campos.append("passes_tentados = ?")
+            valores.append(passes_tentados)
+
+        if passes_certos is not None:
+            campos.append("passes_certos = ?")
+            valores.append(passes_certos)
+
+        if desarmes is not None:
+            campos.append("desarmes = ?")
+            valores.append(desarmes)
+
+        if faltas_cometidas is not None:
+            campos.append("faltas_cometidas = ?")
+            valores.append(faltas_cometidas)
+
+        if cartao_amarelo is not None:
+            if cartao_amarelo not in (0, 1, 2):
+                raise ValueError("cartao_amarelo deve ser 0, 1 ou 2.")
+            campos.append("cartao_amarelo = ?")
+            valores.append(cartao_amarelo)
+
+        if cartao_vermelho is not None:
+            if cartao_vermelho not in (0, 1):
+                raise ValueError("cartao_vermelho deve ser 0 ou 1.")
+            campos.append("cartao_vermelho = ?")
+            valores.append(cartao_vermelho)
+
+        if titular is not None:
+            if titular not in (0, 1):
+                raise ValueError("titular deve ser 0 ou 1.")
+            campos.append("titular = ?")
+            valores.append(titular)
+
+        if not campos:
+            print("[Scout] Nenhum campo informado para atualizar.")
+            return False
+
+        # Valida passes considerando os valores atuais do banco se necessário
+        if passes_certos is not None or passes_tentados is not None:
+            atual = self.buscar_por_id(id_scout)
+            if atual:
+                if passes_certos  is not None:
+                    novos_certos = passes_certos
+                else:
+                    novos_certos = atual["passes_certos"]
+                if passes_tentados is not None:
+                    novos_tentados = passes_tentados
+                else:
+                    novos_tentados = atual["passes_tentados"]
+                if novos_certos > novos_tentados:
+                    raise ValueError("passes_certos não pode ser maior que passes_tentados.")
+
+        valores.append(id_scout)
+        sql = f"UPDATE Scout_Desempenho SET {', '.join(campos)} WHERE id_scout = ?"
+
+        with conectar() as conn:
+            cursor = conn.execute(sql, valores)
+            atualizado = cursor.rowcount > 0
+
+        if atualizado:
+            print(f"[Scout] Scout ID {id_scout} atualizado.")
+        else:
+            print(f"[Scout] Nenhum scout encontrado com ID {id_scout}.")
+
+        return atualizado
+
+    def deletar(self, id_scout: int) -> bool:
+        """
+        Remove um scout do banco.
+        Retorna True se o scout foi removido.
+        """
+        with conectar() as conn:
+            cursor = conn.execute(
+                "DELETE FROM Scout_Desempenho WHERE id_scout = ?", (id_scout,)
+            )
+            deletado = cursor.rowcount > 0
+
+        if deletado:
+            print(f"[Scout] Scout ID {id_scout} removido.")
+        else:
+            print(f"[Scout] Nenhum scout encontrado com ID {id_scout}.")
+
+        return deletado
+
