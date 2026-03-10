@@ -8,7 +8,7 @@ Tabelas:
     - Scout_Desempenho
 
 Autor: Heitor Hernandes
-Data:  2026-03-06
+Data:  10/03/2026
 """
 
 import sqlite3
